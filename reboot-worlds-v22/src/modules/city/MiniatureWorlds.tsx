@@ -97,11 +97,11 @@ function makeWindowTexture(): THREE.CanvasTexture {
 interface WindowSpec {
   phiCenter: number
 }
-const WINDOWS: WindowSpec[] = Array.from({ length: 6 }, (_, i) => ({
+const WINDOWS: WindowSpec[] = Array.from({ length: 5 }, (_, i) => ({
   phiCenter: (i / 5) * Math.PI * 2,
 }))
 
-const WORLD_ORDER = ['city', 'forest', 'ice', 'desert', 'ruins', 'zero'] as const
+const WORLD_ORDER = ['city', 'forest', 'ice', 'desert', 'zero'] as const
 type WorldKind = (typeof WORLD_ORDER)[number]
 
 const WORLD_META: Record<WorldKind, { name: string; color: string; desc: string }> = {
@@ -124,11 +124,6 @@ const WORLD_META: Record<WorldKind, { name: string; color: string; desc: string 
     name: 'Amber Reach',
     color: '#FFB547',
     desc: 'Ideas still searching for a spark. The campfire never goes out and the market stall stays open — abandoned, but the door is never locked.',
-  },
-  ruins: {
-    name: 'The Fallen',
-    color: '#FF5959',
-    desc: 'The graveyard itself — the heart of Reboot. Dead towers relight, the cracks shift from red to cyan, and the REBOOT sign steadies as you revive more projects.',
   },
   zero: {
     name: 'Land of Zero',
@@ -1070,7 +1065,7 @@ function ExtraBuildings({ kind }: { kind: WorldKind }) {
     const mesh = ref.current
     if (!mesh) return
     const dummy = new THREE.Object3D()
-    const n = kind === 'zero' ? 14 : kind === 'ruins' ? 22 : kind === 'ice' ? 20 : kind === 'desert' ? 18 : kind === 'forest' ? 26 : 24
+    const n = kind === 'zero' ? 14 : kind === 'ice' ? 20 : kind === 'desert' ? 18 : kind === 'forest' ? 26 : 24
     let i = 0
     for (let k = 0; k < n; k++) {
       const a = seeded(`eb-a-${kind}-${k}`, k) * Math.PI * 2
@@ -1098,7 +1093,7 @@ function ExtraBuildings({ kind }: { kind: WorldKind }) {
         sy = 0.35 + r2 * 0.95
         sx = sz = 0.45 + r3 * 0.5
         y = sy * 0.55
-      } else if (kind === 'ruins') {
+      } else if (false) {
         rad = 3.0 + r1 * 6.6
         sy = 0.4 + r2 * 1.3
         sx = sz = 0.35 + r3 * 0.4
@@ -1145,7 +1140,7 @@ function ExtraBuildings({ kind }: { kind: WorldKind }) {
         <meshStandardMaterial color="#b0824a" roughness={0.9} flatShading />
       </instancedMesh>
     )
-    if (kind === 'ruins') return (
+    if (false) return (
       <instancedMesh ref={ref} args={[undefined, undefined, 26]}>
         <boxGeometry args={[1, 1, 1]} />
         <meshStandardMaterial color="#3a2e2e" emissive="#4a1414" emissiveIntensity={0.3} flatShading />
@@ -1394,20 +1389,6 @@ function WorldEnrichment({ kind }: { kind: WorldKind }) {
           <Npc color="#ffb547" mode="static" position={[-4.3, 0, 0.1]} lantern="#ff9a3c" flicker />
         </>
       )}
-      {kind === 'ruins' && (
-        <>
-          {/* broken arch landmark */}
-          <mesh position={[2.8, 1.15, -2.6]} rotation={[0, 0.4, 0.12]}>
-            <torusGeometry args={[1.1, 0.16, 8, 20, Math.PI]} />
-            <meshStandardMaterial color="#4a3a3a" emissive="#5a1a1a" emissiveIntensity={0.4} flatShading />
-          </mesh>
-          <People count={10} color="#ff8a8a" spread={3.4} speed={0.3} ghost />
-          {/* grave keeper making rounds with a pale red lantern */}
-          <Npc color="#ff9a8a" mode="circle" radius={5.4} speed={0.18} lantern="#ff5959" ghost />
-          {/* restless spirit tracing eights past the slabs */}
-          <Npc color="#ff6a6a" mode="eight" radius={6.8} speed={0.55} ghost />
-        </>
-      )}
       {kind === 'zero' && (
         <>
           <People count={10} color="#c9d6e4" spread={2.0} speed={0.15} ghost />
@@ -1495,13 +1476,12 @@ function WorldDisc({ kind, angle, index, revival }: { kind: WorldKind; angle: nu
         {kind === 'forest' && <ForestWorld />}
         {kind === 'ice' && <IceWorld />}
         {kind === 'desert' && <DesertWorld />}
-        {kind === 'ruins' && <RuinsWorld revival={revival} />}
         {kind === 'zero' && <ZeroWorld />}
         <WorldEnrichment kind={kind} />
 
         <pointLight
           position={[0, 6.5, 0]}
-          intensity={kind === 'ruins' ? 10 + revival * 22 : 26}
+          intensity={26}
           distance={26}
           color={meta.color}
         />

@@ -1,0 +1,13 @@
+import { useMemo } from 'react'
+import { Canvas } from '@react-three/fiber'
+import { OrbitControls } from '@react-three/drei'
+import { useUI } from '@/stores/ui'
+import { BlackHole } from '../cityworld/environment/BlackHole'
+import { Architecture,Parts,Motion,EnvironmentSettings } from '../cityworld/environment/ScenePrimitives'
+import { useMotionSettings } from '../cityworld/hooks/useCityNavigation'
+export function GraveyardPlanet(){
+ const {reduced,lowEffects,setLowEffects}=useMotionSettings()
+ const shards=useMemo(()=>{const a=new Architecture();for(let i=0;i<18;i++){const angle=i*2.4,y=1-(i/17)*2,r=Math.sqrt(1-y*y),radius=i%4===0?15:11;const x=Math.cos(angle)*r*radius,z=Math.sin(angle)*r*radius; a.add('rock',[x,y*radius,z],[2.3,1.8,2.6],i%3?'#283444':'#463847',[i*.3,i,.4]);if(i%3===0){a.box([x,y*radius+3,z],[1,6,1.4],'#4c5469',[.2,i,-.25]);a.beam([x,y*radius,z],[x+2,y*radius+3,z],.12,'#c16584',true)}}for(let i=0;i<14;i++){const t=i/14;a.add('rock',[12+t*20,2+t*9+Math.sin(t*Math.PI)*4,-3-t*7],[1.8-t,1,1.3],'#776275',[i,i,0])}return a},[])
+ return <div className="graveyard-planet" data-experience="graveyard-planet"><Canvas camera={{position:[7,18,78],fov:48}} dpr={[1,lowEffects?1:1.5]} frameloop={reduced?'demand':'always'} gl={{antialias:!lowEffects}}><color attach="background" args={['#070813']}/><ambientLight intensity={1.2}/><directionalLight position={[-20,30,30]} intensity={2} color="#a8c9ed"/><EnvironmentSettings.Provider value={{reduced,lowEffects}}><Motion speed={.018}>{Array.from({length:6},(_,i)=><mesh key={i} position={[Math.cos(i*Math.PI/3)*2.2,i%2?1.1:-1.1,Math.sin(i*Math.PI/3)*2.2]} rotation={[i%2*.12,0,i%3*.06]}><sphereGeometry args={[11,12,8,i*Math.PI/3,.8,.2,2.7]}/><meshStandardMaterial color={i%2?'#334354':'#3c354a'} side={2} flatShading/></mesh>)}<Parts data={shards}/><mesh><sphereGeometry args={[5.5,20,12]}/><meshStandardMaterial color="#230e20" emissive="#89314c" emissiveIntensity={.4}/></mesh></Motion><BlackHole position={[29,13,-18]} scale={1.05}/></EnvironmentSettings.Provider><OrbitControls target={[7,2,0]} enablePan={false} minDistance={38} maxDistance={95}/></Canvas>
+ <section className="planet-entry"><p className="eyebrow">A WORLD THAT COULD NOT HOLD TOGETHER</p><h1>Graveyard</h1><p>A shattered planet pulled apart by a black hole. The Forgotten Archive still holds the stories below.</p><button className="btn-primary" onClick={()=>useUI.getState().enterCity('Graveyard')}>Enter the ruined planet ↗</button><button onClick={()=>useUI.getState().setMode('city')}>Back to Reboot</button></section><div className="world-quality"><label><input type="checkbox" checked={lowEffects} onChange={e=>setLowEffects(e.target.checked)}/> Reduced effects</label></div></div>
+}

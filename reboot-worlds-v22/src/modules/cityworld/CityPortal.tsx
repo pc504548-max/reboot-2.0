@@ -2,6 +2,9 @@ import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useUI } from '@/stores/ui'
+import { isCityId } from './cityRegistry'
+import { landmarkArchitecture } from './environment/Landmarks'
+import { Parts } from './environment/ScenePrimitives'
 
 /** Original radial shader: no textures, noise libraries, or postprocessing. */
 const fragmentShader = `
@@ -22,6 +25,8 @@ const fragmentShader = `
 export function CityPortal({ color, position, quaternion, reduced, lowEffects }: {
   color: string; position: THREE.Vector3; quaternion: THREE.Quaternion; reduced: boolean; lowEffects: boolean
 }) {
+  const destination=useUI(s=>s.destination)
+  const preview=useMemo(()=>destination&&isCityId(destination)?landmarkArchitecture(destination):null,[destination])
   const group = useRef<THREE.Group>(null)
   const rim = useRef<THREE.MeshStandardMaterial>(null)
   const rings = useRef<THREE.Group>(null)
@@ -40,6 +45,7 @@ export function CityPortal({ color, position, quaternion, reduced, lowEffects }:
   })
   return <group ref={group} position={position} quaternion={quaternion}>
     <mesh><torusGeometry args={[5.8, .32, 8, 64]} /><meshStandardMaterial ref={rim} color="#132536" emissive={color} emissiveIntensity={1.7} /></mesh>
+    {preview && <group position={[0,-2,.4]} scale={.14}><Parts data={preview} name="destination-preview" /></group>}
     <group ref={rings}>
       {[6.4, 7].map((r, i) => <mesh key={r} rotation={[0, 0, i * Math.PI]}>
         <torusGeometry args={[r, .06, 5, lowEffects ? 32 : 64, Math.PI * 1.6]} /><meshBasicMaterial color={color} toneMapped={false} />

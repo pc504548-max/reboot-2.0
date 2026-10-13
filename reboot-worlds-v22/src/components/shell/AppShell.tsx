@@ -1,3 +1,4 @@
+import { isZeroProject } from '@/lib/projectDiscovery'
 import { CreateProjectDialog } from '@/components/projects/CreateProjectDialog'
 import { BadgeGallery } from '@/components/BadgeGallery'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -24,7 +25,9 @@ import {
 } from 'lucide-react'
 import { useUI, type Mode, type SortFilter } from '@/stores/ui'
 import { CITIES, isCityId } from '@/modules/cityworld/cityRegistry'
-import { useProjects } from '@/stores/auth'
+import { useAuth, useProjects } from '@/stores/auth'
+import { useDistrictSignals } from '@/modules/cityworld/environment/districtSignals'
+import { GuestProjects } from '@/components/projects/GuestProjects'
 import { DISTRICTS, STATUS_BADGES, computeAwards, type ProjectStatus, type AwardType } from '@/types/project'
 import { cn } from '@/lib/utils'
 import { useState, useMemo } from 'react'
@@ -32,6 +35,7 @@ import { useState, useMemo } from 'react'
 const MODES: { id: Mode; label: string; icon: typeof Globe2; desc: string }[] = [
   { id: 'city', label: 'World', icon: Globe2, desc: 'Explore the planet' },
   { id: 'worlds', label: 'Worlds', icon: Boxes, desc: 'Explore connected cities' },
+  { id: 'zero', label: 'Zero Hub', icon: Lightbulb, desc: 'Discover ideas before their first 100 views' },
   { id: 'network', label: 'Network', icon: Network, desc: 'See connections' },
   { id: 'graveyard', label: 'Graveyard', icon: Skull, desc: 'Visit the fallen' },
   { id: 'echo', label: 'Echo', icon: Sparkles, desc: 'Digital consciousness' },
@@ -45,17 +49,24 @@ const AWARD_ICONS: Record<AwardType, typeof Zap> = {
   community: Users,
   innovator: Lightbulb,
   comeback: RefreshCw,
-  founder: UserCheck,
+  founder: UserCheck, firstlook: Sparkles, discovered: TrendingUp, historian: Shield, restorer: Lightbulb,
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const user = useAuth(s => s.user)
+  const [guestsOpen, setGuestsOpen] = useState(false)
+  const [accountError, setAccountError] = useState('')
   const mode = useUI((s) => s.mode)
+  const selectedRecord = useUI(s => s.selectedProjectId)
+  const activeLandmark = useDistrictSignals(s=>!!s.landmark || !!s.resident)
+  const inspectingRecord = !!selectedRecord || activeLandmark || mode==='beta'
   const activeMode = mode === 'cityworld' ? 'city' : mode
   const setMode = useUI((s) => s.setMode)
   const selectProject = useUI((s) => s.selectProject)
   const projects = useProjects((s) => s.projects)
   const searchQuery = useUI((s) => s.searchQuery)
   const setSearchQuery = useUI((s) => s.setSearchQuery)
+  const [quietView,setQuietView]=useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768)
   const statusFilter = useUI((s) => s.statusFilter)
   const setStatusFilter = useUI((s) => s.setStatusFilter)
@@ -119,7 +130,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [projects])
 
   return (
-    <div className="relative w-full h-full flex bg-background overflow-hidden">
+    <div className={`reboot-shell relative w-full h-full flex bg-background overflow-hidden ${quietView?'quiet-view':''}`}>
+      <button className="interface-toggle" onClick={()=>setQuietView(!quietView)}>{quietView?'Show interface':'Hide interface'}</button>
       {/* Sidebar */}
       <AnimatePresence initial={false}>
         {sidebarOpen && (
@@ -143,7 +155,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </motion.div>
               <div className="flex flex-col">
                 <span className="font-mono text-sm uppercase tracking-[0.2em] text-text">Reboot</span>
-                <span className="font-mono text-[9px] text-text-secondary/60">World of Ideas</span>
+                <span className="font-mono text-[9px] text-text-secondary/60">PLANET / REBOOT</span>
               </div>
             </div>
 
@@ -168,7 +180,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <button
                       key={p.id}
                       onClick={() => {
-                        setMode('city')
+                        setMode(isZeroProject(p)?'zero':'city')
                         selectProject(p.id)
                         setSearchQuery('')
                       }}
@@ -187,7 +199,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="label-mono px-sm py-sm flex items-center gap-1">
                 <Compass size={11} /> Biomes
               </div>
-              {DISTRICTS.map((d) => {
+              {DISTRICTS.filter(d=>d.id!=='Graveyard').map((d) => {
                 const isActive = categoryFilter === d.id
                 const color = isCityId(d.id) ? CITIES[d.id].palette.accent : d.theme.color
                 const count = districtCounts.get(d.id) ?? 0
@@ -384,31 +396,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </AnimatePresence>
             </div>
 
-            <button className="text-text-secondary hover:text-text transition-colors relative">
-              <Bell size={15} />
-              <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary animate-pulse-soft" />
-            </button>
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary/40 to-accent/40 border border-border/60" />
+            <button className="beta-trigger" onClick={()=>setMode('beta')}>Beta & feedback</button><button className="account-trigger" onClick={()=>user ? useAuth.getState().signOut().catch(()=>setAccountError('Sign out failed. Please retry.')) : setMode('auth')}>{user?'Sign out':'Sign in'}</button>
+
           </div>
         </header>
 
         {/* Module canvas */}
         <main className="relative flex-1 min-h-0 overflow-hidden">
-          <AnimatePresence mode="wait">
+          <AnimatePresence initial={false}>
             <motion.div
               key={['city', 'cityworld', 'worlds'].includes(mode) ? 'world-system' : mode}
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.02 }}
-              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ duration: 0.18 }}
               className="absolute inset-0"
             >
               {children}
             </motion.div>
           </AnimatePresence>
 
+          {accountError && <div role="alert" className="world-error">{accountError}<button onClick={()=>setAccountError('')}>Dismiss</button></div>}
+          {!inspectingRecord && <button className="guest-shelf" onClick={()=>setGuestsOpen(true)}>{user?'My temporary ideas':'Anonymous mode'} · {projects.filter(p=>p.temporary).length} temporary</button>}
+          {guestsOpen && <GuestProjects onClose={()=>setGuestsOpen(false)} />}
           {creating && <CreateProjectDialog onClose={() => setCreating(false)} />}
           {badgesOpen && <BadgeGallery onClose={() => setBadgesOpen(false)} />}
+          {!inspectingRecord && <>
           <button className="badge-gallery-trigger" onClick={event => { event.currentTarget.focus(); setBadgesOpen(true) }}><Award size={16} /> Badges</button>
           {/* Floating initialize button */}
           <motion.button
@@ -423,8 +436,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             style={{ boxShadow: '0 0 30px rgba(61,216,255,0.25)' }}
           >
             <Plus size={18} />
-            <span className="font-mono text-sm tracking-wider">Initialize</span>
+            <span className="font-mono text-sm tracking-wider">Build an idea</span>
           </motion.button>
+          </>}
         </main>
       </div>
     </div>

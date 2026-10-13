@@ -1,7 +1,11 @@
+import { normalizeAppearance } from '@/lib/buildingAppearance'
+import { useState } from 'react'
+import { useProjects } from '@/stores/auth'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Sliders, Palette, Building, Sparkles } from 'lucide-react'
 import { useUI, type BuildingCustomization } from '@/stores/ui'
-import { CATEGORY_THEME, type ProjectCategory } from '@/types/project'
+import { CATEGORY_THEME } from '@/types/project'
+import { CITIES, isCityId } from '@/modules/cityworld/cityRegistry'
 
 const COLORS = [
   '#3DD8FF', '#3BFF91', '#FFB547', '#5CFFAA', '#FF5959',
@@ -23,7 +27,22 @@ export function CustomizationPanel({ projectId, projectName }: { projectId: stri
   const updateCustomization = useUI((s) => s.updateCustomization)
 
   const isOpen = customizingProjectId === projectId
-  const custom = customizations[projectId]
+  const project = useProjects(s=>s.projects.find(p=>p.id===projectId))
+  const cityCategory = useUI(s => s.cityCategory)
+  const defaultColor = project
+    ? cityCategory === project.category && isCityId(project.category)
+      ? CITIES[project.category].palette.accent
+      : CATEGORY_THEME[project.category].emissive
+    : '#3DD8FF'
+  const custom = normalizeAppearance({...project?.buildingCustomization,...customizations[projectId]})
+  const [saving,setSaving]=useState(false),[message,setMessage]=useState('')
+  async function save() {
+    setSaving(true)
+    try {
+      const ok=await useProjects.getState().updateProject(projectId,{buildingCustomization:{color:custom.color??defaultColor,height:custom.height??1,style:custom.style??'standard',glowIntensity:custom.glowIntensity??1.4}})
+      setMessage(ok?(project?.temporary?'Appearance saved in this tab.':'Appearance saved to your project.'):(useProjects.getState().error??'Could not save.'))
+    }finally{setSaving(false)}
+  }
 
   if (!isOpen) return null
 
@@ -34,7 +53,7 @@ export function CustomizationPanel({ projectId, projectName }: { projectId: stri
         animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
         exit={{ opacity: 0, y: 40, filter: 'blur(8px)' }}
         transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-        className="absolute bottom-lg left-1/2 -translate-x-1/2 w-[400px] max-w-[calc(100vw-2rem)] z-40"
+        className="customization-panel absolute bottom-lg left-1/2 -translate-x-1/2 w-[400px] max-w-[calc(100vw-2rem)] z-40"
       >
         <div className="glass-strong p-lg rounded-lg">
           <div className="flex items-center justify-between mb-md">
@@ -43,7 +62,7 @@ export function CustomizationPanel({ projectId, projectName }: { projectId: stri
               <span className="text-sm font-medium text-text">Customize: {projectName}</span>
             </div>
             <button
-              onClick={stopCustomizing}
+              aria-label="Close customization" onClick={stopCustomizing}
               className="text-text-secondary hover:text-text transition-colors"
             >
               <X size={16} />
@@ -60,12 +79,13 @@ export function CustomizationPanel({ projectId, projectName }: { projectId: stri
               {COLORS.map((c) => (
                 <button
                   key={c}
+                  aria-label={`Building color ${c}`}
                   onClick={() => updateCustomization(projectId, { color: c })}
                   className="w-7 h-7 rounded-md transition-all duration-200 hover:scale-110"
                   style={{
                     backgroundColor: c,
-                    boxShadow: custom?.color === c ? `0 0 12px ${c}` : 'none',
-                    border: custom?.color === c ? '2px solid #fff' : '2px solid transparent',
+                    boxShadow: (custom.color ?? defaultColor) === c ? `0 0 12px ${c}` : 'none',
+                    border: (custom.color ?? defaultColor) === c ? '2px solid #fff' : '2px solid transparent',
                   }}
                 />
               ))}
@@ -105,6 +125,7 @@ export function CustomizationPanel({ projectId, projectName }: { projectId: stri
             </div>
             <input
               type="range"
+              aria-label="Building height"
               min={0.5}
               max={2}
               step={0.1}
@@ -126,7 +147,7 @@ export function CustomizationPanel({ projectId, projectName }: { projectId: stri
               </span>
             </div>
             <input
-              type="range"
+              type="range" aria-label="Glow intensity"
               min={0.5}
               max={4}
               step={0.1}
@@ -136,9 +157,9 @@ export function CustomizationPanel({ projectId, projectName }: { projectId: stri
             />
           </div>
 
-          <div className="pt-md border-t border-border/40">
+          <div className="pt-md border-t border-border/40"><button className="btn-primary" disabled={saving} onClick={save}>{saving?'Saving…':'Save appearance'}</button>{message&&<p role="status">{message}</p>}
             <p className="text-[10px] text-text-secondary/60 text-center">
-              Customizations are previewed live on the building above
+              Preview updates live. Save to keep this appearance.
             </p>
           </div>
         </div>

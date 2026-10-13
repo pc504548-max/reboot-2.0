@@ -28,13 +28,28 @@ export function useCityNavigation() {
 }
 
 export function useMotionSettings() {
+  const [hidden,setHidden]=useState(()=>document.hidden)
+  useEffect(()=>{const changed=()=>setHidden(document.hidden);document.addEventListener('visibilitychange',changed);return()=>document.removeEventListener('visibilitychange',changed)},[])
   const [reduced, setReduced] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches)
-  const [lowEffects, setLowEffects] = useState(() => matchMedia('(max-width: 768px)').matches || navigator.hardwareConcurrency <= 4)
+  const [lowEffects, updateLowEffects] = useState(() => {
+    try { const stored=localStorage.getItem('reboot-reduced-effects'); if(stored!==null)return stored==='true' } catch {}
+    return matchMedia('(max-width: 768px)').matches || navigator.hardwareConcurrency <= 4
+  })
+  const setLowEffects=(value:boolean)=>{
+    updateLowEffects(value)
+    try {localStorage.setItem('reboot-reduced-effects',String(value))} catch {}
+    window.dispatchEvent(new CustomEvent('reboot-effects',{detail:value}))
+  }
+  useEffect(()=>{
+    const changed=(event:Event)=>updateLowEffects((event as CustomEvent<boolean>).detail)
+    window.addEventListener('reboot-effects',changed)
+    return ()=>window.removeEventListener('reboot-effects',changed)
+  },[])
   useEffect(() => {
     const query = matchMedia('(prefers-reduced-motion: reduce)')
     const changed = () => setReduced(query.matches)
     query.addEventListener('change', changed)
     return () => query.removeEventListener('change', changed)
   }, [])
-  return { reduced, lowEffects, setLowEffects }
+  return { reduced: reduced || hidden, lowEffects, setLowEffects }
 }

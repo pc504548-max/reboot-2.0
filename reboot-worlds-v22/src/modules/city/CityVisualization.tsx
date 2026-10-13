@@ -1,3 +1,5 @@
+import { recordedViews } from '@/lib/projectDiscovery'
+import { normalizeAppearance } from '@/lib/buildingAppearance'
 /**
  * CityVisualization — the planet-based 3D renderer for the City module.
  *
@@ -135,7 +137,7 @@ function alignToNormal(normal: [number, number, number]): [number, number, numbe
 function SurrealBuilding({ project, hovered, selected, onHover, onSelect }: BuildingProps) {
   const theme = CATEGORY_THEME[project.category]
   const customizations = useUI((s) => s.customizations)
-  const custom = customizations[project.id]
+  const custom = normalizeAppearance({...project.buildingCustomization,...customizations[project.id]})
   const dna = useMemo(() => buildingDNA(project, custom?.color ?? theme.emissive), [project, custom?.color, theme.emissive])
   const height = dna.height * (custom?.height ?? 1)
   const color = custom?.color ?? dna.color
@@ -175,6 +177,7 @@ function SurrealBuilding({ project, hovered, selected, onHover, onSelect }: Buil
     emissive: color,
     emissiveIntensity: 0.12,
   }), [color, project.status])
+  useEffect(() => () => bodyMaterial.dispose(), [bodyMaterial])
 
   const platformPositions: [number, number, number][] = [
     [-dna.width * 1.8, height * 0.3, 0],
@@ -438,7 +441,7 @@ const AWARD_ICONS_CITY: Record<AwardType, typeof Zap> = {
   community: Users,
   innovator: Lightbulb,
   comeback: RefreshCw,
-  founder: UserCheck,
+  founder: UserCheck, firstlook: Sparkles, discovered: TrendingUp, historian: Shield, restorer: Lightbulb,
 }
 
 const STATUS_CONFIG: Record<ProjectStatus, { label: string; color: string; bg: string }> = {
@@ -472,6 +475,7 @@ export function ProjectDetail({ project, onClose, canCustomize = true }: { canCu
               <span className="label-mono" style={{ color: theme.emissive }}>{district.shortName}</span>
             </div>
             <h3 className="text-lg font-medium text-text">{project.name}</h3>
+            {project.temporary && <p className="temporary-label">Temporary · this tab only</p>}
             <p className="text-xs text-text-secondary mt-1">{project.tagline}</p>
           </div>
           <button onClick={onClose} aria-label="Close project details" className="text-text-secondary hover:text-text transition-colors text-sm shrink-0 ml-sm">✕</button>
@@ -484,6 +488,7 @@ export function ProjectDetail({ project, onClose, canCustomize = true }: { canCu
           <MomentumBar value={project.momentum} color={theme.emissive} />
         </div>
         <div className="grid grid-cols-2 gap-md mb-md">
+          <Stat label="Member views" value={recordedViews(project).toLocaleString()} />
           <Stat label="Stage" value={`${project.stage}/5`} />
           <Stat label="Followers" value={project.followers.toLocaleString()} />
         </div>

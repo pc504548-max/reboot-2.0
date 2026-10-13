@@ -7,7 +7,7 @@ import { create } from 'zustand'
 import { isCityId } from '@/modules/cityworld/cityRegistry'
 import type { ProjectCategory, ProjectStatus } from '@/types/project'
 
-export type Mode = 'boot' | 'landing' | 'auth' | 'city' | 'network' | 'graveyard' | 'echo' | 'worlds' | 'cityworld'
+export type Mode = 'zero' | 'beta' | 'boot' | 'landing' | 'auth' | 'city' | 'network' | 'graveyard' | 'echo' | 'worlds' | 'cityworld'
 
 export type SortFilter =
   | 'newest'
@@ -79,9 +79,9 @@ export const useUI = create<UIState>((set, get) => ({
       get().exitCity(); return
     }
     const current = get()
-    set({ mode, travelPhase: 'idle', travelError: null, travelId: current.travelId + 1,
+    set({ mode, selectedProjectId:mode==='echo'||mode==='network'?current.selectedProjectId:null, customizingProjectId:null, travelPhase: 'idle', travelError: null, travelId: current.travelId + 1,
       ...(current.travelPhase !== 'idle' ? { destination: current.cityCategory, categoryFilter: current.cityCategory } : {}),
-      ...(mode === 'city' || mode === 'worlds' ? {cityCategory: null, categoryFilter: null, destination: null} : {}) })
+      ...(mode === 'city' || mode === 'worlds' || mode === 'zero' || mode === 'graveyard' ? {cityCategory: null, categoryFilter: null, destination: null} : {}) })
   },
   advanceTravel: (id, phase) => set(s => {
     const next: Record<TravelPhase, TravelPhase> = { idle: 'loading', loading: 'departing', departing: 'crossing', crossing: 'arriving', arriving: 'idle' }

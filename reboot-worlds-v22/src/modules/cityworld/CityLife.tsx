@@ -1,69 +1,87 @@
+import { useDistrictSignals } from './environment/districtSignals'
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { CITIES, type CityId } from './cityRegistry'
+import { WORK_SITES } from './environment/cityDesign'
 
-/** Shared streets and residents; only the active city's population is mounted. */
+type Behavior = 'walking' | 'turning' | 'working' | 'inspecting' | 'interacting' | 'idle'
+/** Fixed lanes around actual work sites avoid buildings and each other without a physics engine. */
+export function residentPose(index: number, t: number, city: CityId) {
+  const site=WORK_SITES[index%4],lane=Math.floor(index/4),drone=lane===2
+  const active=lane<3, cycle=(t*(city==='Graveyard'?.35:1)+index*2)%24
+  const walking=active && cycle<12
+  const state:Behavior=walking?'walking':cycle<14?'turning':lane%3===0?'working':lane%3===1?'interacting':cycle<20?'inspecting':'idle'
+  const progress=Math.min(cycle,12)/12,angle=progress*Math.PI*2+index*.9
+  const r=2.3+lane*.48
+  const x=site[0]+Math.cos(active?angle:index)*r,z=site[2]+4+Math.sin(active?angle:index)*r
+  return {x,z,y:drone?3.8+Math.sin(t*.6+index)*.3:0,angle:walking?-angle:Math.atan2(site[0]-x,site[2]+4-z),state,drone}
+}
+
 export function CityLife({ city, reduced, lowEffects }: { city: CityId; reduced: boolean; lowEffects: boolean }) {
-  const { palette } = CITIES[city]
-  const population = city === 'Graveyard' ? 3 : lowEffects ? 12 : city === 'Legend' ? 36 : 24
-  const bodies = useRef<THREE.InstancedMesh>(null)
-  const heads = useRef<THREE.InstancedMesh>(null)
-  const pods = useRef<THREE.InstancedMesh>(null)
-  const dummy = useMemo(() => new THREE.Object3D(), [])
-  const time = useRef(0)
-  function update(t: number) {
-    if (!bodies.current || !heads.current || !pods.current) return
-    for (let i = 0; i < population; i++) {
-      const a = i / population * Math.PI * 2 + t * (i % 2 ? .09 : -.07)
-      const radius = i % 2 ? 11.7 : 12.4
-      const x = Math.cos(a) * radius, z = Math.sin(a) * radius
-      dummy.rotation.set(0, -a, 0)
-      dummy.position.set(x, 1.05, z); dummy.scale.set(.42, .7, .3); dummy.updateMatrix()
-      bodies.current.setMatrixAt(i * 3, dummy.matrix)
-      for (let leg = 0; leg < 2; leg++) {
-        const stride = reduced ? 0 : Math.sin(t * 5 + i + leg * Math.PI) * .15
-        dummy.position.set(x + Math.cos(a) * (leg ? .14 : -.14), .52, z + stride)
-        dummy.scale.set(.14, .5, .16); dummy.updateMatrix()
-        bodies.current.setMatrixAt(i * 3 + leg + 1, dummy.matrix)
+  const population=city==='Graveyard'?(lowEffects?6:14):lowEffects?16:36
+  const body=useRef<THREE.InstancedMesh>(null),head=useRef<THREE.InstancedMesh>(null),cloth=useRef<THREE.InstancedMesh>(null),light=useRef<THREE.InstancedMesh>(null)
+  const wheels=useRef<THREE.InstancedMesh>(null)
+  const dummy=useMemo(()=>new THREE.Object3D(),[]),color=useMemo(()=>new THREE.Color(),[])
+  const time=useRef(0),last=useRef(-1)
+  const p=CITIES[city].palette
+  function update(t:number,colors=false) {
+    if(!body.current||!head.current||!cloth.current||!light.current||!wheels.current)return
+    for(let i=0;i<population;i++) {
+      const pose=residentPose(i,t,city),{x,z,angle,state,drone}=pose
+      const stature=.85+(i%4)*.12,robot=['AI','Robotics','IdeaHub'].includes(city),ghost=city==='Graveyard'&&i%4===3
+      const creature=city==='Gaming'&&i%4===2&&!drone
+      const wheeled=(city==='Robotics'||city==='IdeaHub')&&i%3===1&&!drone
+      const reaction=useDistrictSignals.getState().pulse>0 && performance.now()-useDistrictSignals.getState().pulse<2500
+      const y=pose.y+(ghost?.35:0),wide=creature?.7:robot?.58:.42+(i%3)*.06
+      const limb=state==='walking'?Math.sin(t*4+i)*.3:state==='working'?Math.sin(t*2+i)*.15:0
+      function part(mesh:THREE.InstancedMesh,n:number,lx:number,ly:number,lz:number,sx:number,sy:number,sz:number,rx=0) {
+        dummy.position.set(x+Math.cos(angle)*lx+Math.sin(angle)*lz,y+ly*stature,z-Math.sin(angle)*lx+Math.cos(angle)*lz)
+        dummy.rotation.set(rx,angle+(reaction?.35:0),0);dummy.scale.set(sx,sy*stature,sz);dummy.updateMatrix();mesh.setMatrixAt(n,dummy.matrix)
       }
-      dummy.position.set(x, 1.63, z); dummy.scale.setScalar(.25); dummy.updateMatrix()
-      heads.current.setMatrixAt(i, dummy.matrix)
+      part(body.current,i*6,0,1.05,0,drone?.65:wide,drone?.28:creature?.5:.8,.38)
+      for(let side=0;side<2;side++) {
+        const sign=side?1:-1
+        part(body.current,i*6+1+side,sign*.19,.4,0,drone||wheeled?0:.16,.65,.18,limb*sign)
+        part(body.current,i*6+3+side,sign*(wide*.7),1.05,state==='working'?.28:0,city==='Graveyard'&&i%3===1&&side===0?0:.14,drone?.1:.65,.16,drone?0:state==='working'?-1:limb*-sign)
+      }
+      // Role accessory: supply pack, astronaut tank, artist tool or robot chassis.
+      part(body.current,i*6+5,0,robot&&!drone?1.68:1.12,robot&&!drone?0:-.3,robot&&!drone?.48:.34,city==='Space'?.65:.45,robot&&!drone?.45:.25)
+      part(head.current,i,0,drone?1.1:1.68,0,drone?.38:robot?0:city==='Space'?.36:creature?.38:.27,.3,.27)
+      const robe=(city==='Graveyard'||city==='Education'||city==='Health')&&!drone
+      part(cloth.current,i*2,0,.9,0,robe?.5:0,1.4,.5)
+      const hood=city==='Graveyard',hat=city==='Creator'||city==='Education'
+      part(cloth.current,i*2+1,0,hood?1.85:1.99,0,!drone&&(hood||hat)?.38:0,hood?.7:.16,.38)
+      for(let j=0;j<2;j++) {
+        part(wheels.current,i*2+j,(j?1:-1)*.36,.3,0,wheeled?.28:0,.28,.28)
+      }
+      part(light.current,i*2,0,drone?1.12:1.72,.255,.32,.085,.06)
+      const book=city==='Education'||city==='Community',brush=city==='Creator'
+      part(light.current,i*2+1,.46,.8,.35,brush?.06:book?.28:.15,brush?.7:book?.06:.23,book?.35:.15)
+      if(colors) {
+        const tone=city==='Graveyard'?['#687181','#323f53','#6c526b'][i%3]:[p.secondary,'#97abb8',p.body,'#bc9c88'][i%4]
+        for(let j=0;j<6;j++)body.current.setColorAt(i*6+j,color.set(tone))
+        head.current.setColorAt(i,color.set(city==='Space'?'#c6d7de':robot?'#7a969e':tone))
+      }
     }
-    for (let i = 0; i < 4; i++) {
-      const a = i / 4 * Math.PI * 2 + t * .13
-      dummy.position.set(Math.cos(a) * 8.8, .65, Math.sin(a) * 8.8)
-      dummy.rotation.set(0, -a, 0); dummy.scale.set(1, .55, 1.9); dummy.updateMatrix()
-      pods.current.setMatrixAt(i, dummy.matrix)
+    for(const mesh of [body.current,head.current,cloth.current,light.current,wheels.current]) {
+      mesh.instanceMatrix.needsUpdate=true
+      if(colors&&mesh.instanceColor)mesh.instanceColor.needsUpdate=true
     }
-    for (const mesh of [bodies.current, heads.current, pods.current]) mesh.instanceMatrix.needsUpdate = true
   }
-  useLayoutEffect(() => { time.current = 0; update(0) }, [population, city, reduced])
-  useFrame((_, delta) => { if (!reduced) { time.current += delta; update(time.current) } })
-  return <group name="city-streets-and-residents">
-    {/* Inner civic loop and the outer district highway. */}
-    {[9, 80].map((r) => <group key={r}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0,.08,0]}><ringGeometry args={[r-1.8,r+1.8,128]} /><meshStandardMaterial color="#182735" roughness={.8} /></mesh>
-      {[r-1.8,r+1.8].map(edge => <mesh key={edge} rotation={[-Math.PI/2,0,0]} position={[0,.1,0]}><ringGeometry args={[edge,edge+.12,128]} /><meshBasicMaterial color={palette.accent} /></mesh>)}
-    </group>)}
-    <mesh rotation={[-Math.PI/2,0,0]} position={[0,.06,0]}><ringGeometry args={[10.9,13,96]} /><meshStandardMaterial color="#35444f" /></mesh>
-    <mesh position={[0,.08,48]}><boxGeometry args={[6,.14,68]} /><meshStandardMaterial color="#1b2c3a" /></mesh>
-    {[-3,3].map(x=><mesh key={x} position={[x,.18,48]}><boxGeometry args={[.12,.08,68]} /><meshBasicMaterial color={palette.accent} /></mesh>)}
-    {Array.from({length:16},(_,i)=><mesh key={i} position={[0,.18,17+i*4]}><boxGeometry args={[.12,.05,1.8]} /><meshBasicMaterial color="#ddeaf0" /></mesh>)}
-    {/* Street lamps, transit shelters and planted civic terraces. */}
-    {[-1,1].flatMap(side => [24,44,64].map(z=><group key={`${side}:${z}`} position={[side*5,0,z]}>
-      <mesh position={[0,2,0]}><cylinderGeometry args={[.08,.12,4,6]} /><meshStandardMaterial color="#53677b" /></mesh>
-      <mesh position={[0,4,0]}><boxGeometry args={[1.2,.18,.7]} /><meshBasicMaterial color={palette.secondary} /></mesh>
-      <mesh position={[side*2,.4,0]}><boxGeometry args={[2,.8,3]} /><meshStandardMaterial color={palette.body} /></mesh>
-      <mesh position={[side*2,1.1,0]}><icosahedronGeometry args={[.85,0]} /><meshStandardMaterial color={city === 'Graveyard' ? '#514555' : '#237a6c'} flatShading /></mesh>
-    </group>))}
-    {[-1,1].map(side=><group key={side} position={[side*7,0,36]}>
-      <mesh position={[0,2.8,0]}><boxGeometry args={[5,.35,7]} /><meshStandardMaterial color={palette.body} emissive={palette.accent} emissiveIntensity={.35} /></mesh>
-      <mesh position={[side*2,1.4,0]}><boxGeometry args={[.25,2.8,6]} /><meshStandardMaterial color="#527384" /></mesh>
-      <mesh position={[0,.5,0]}><boxGeometry args={[3,1,4]} /><meshStandardMaterial color={palette.body} /></mesh>
-    </group>)}
-    <instancedMesh name="residents" ref={bodies} args={[undefined,undefined,population*3]} frustumCulled={false}><boxGeometry /><meshStandardMaterial color={palette.secondary} emissive={palette.secondary} emissiveIntensity={.2} /></instancedMesh>
-    <instancedMesh name="resident-heads" ref={heads} args={[undefined,undefined,population]} frustumCulled={false}><sphereGeometry args={[1,8,6]} /><meshStandardMaterial color="#e3f5ff" /></instancedMesh>
-    <instancedMesh name="transit-pods" ref={pods} args={[undefined,undefined,4]} frustumCulled={false}><boxGeometry /><meshStandardMaterial color={palette.accent} emissive={palette.accent} emissiveIntensity={.5} metalness={.6} roughness={.3} /></instancedMesh>
+  useLayoutEffect(()=>{time.current=0;last.current=-1;update(0,true)},[city,population,reduced])
+  useFrame(({camera},delta)=>{
+    if(reduced)return
+    time.current+=Math.min(delta,.1)
+    const interval=lowEffects?.1:camera.position.length()>85?.16:1/30
+    if(time.current-last.current<interval)return
+    last.current=time.current;update(time.current)
+  })
+  return <group name={city+'-fictional-inhabitants'} userData={{population,animated:Math.min(population,12)}}>
+    <instancedMesh name="resident-bodies" onClick={e=>{e.stopPropagation();if(e.instanceId!==undefined)useDistrictSignals.getState().inspect(city,Math.floor(e.instanceId/6))}} ref={body} args={[undefined,undefined,population*6]} frustumCulled={false}><boxGeometry/><meshStandardMaterial roughness={.7}/></instancedMesh>
+    <instancedMesh name="resident-heads-and-drones" ref={head} args={[undefined,undefined,population]} frustumCulled={false}><icosahedronGeometry args={[1,1]}/><meshStandardMaterial metalness={.35} roughness={.4}/></instancedMesh>
+    <instancedMesh name="archive-cloaks" ref={cloth} args={[undefined,undefined,population*2]} frustumCulled={false}><coneGeometry args={[1,1,7]}/><meshStandardMaterial color={city==='Health'?'#a6d0c1':city==='Education'?'#657c9e':city==='Creator'?'#ba8cad':'#3d334b'}/></instancedMesh>
+    <instancedMesh name="maintenance-wheels" ref={wheels} args={[undefined,undefined,population*2]} frustumCulled={false}><torusGeometry args={[1,.28,5,12]}/><meshStandardMaterial color="#718899" metalness={.7}/></instancedMesh>
+    <instancedMesh name="eyes-and-role-tools" ref={light} args={[undefined,undefined,population*2]} frustumCulled={false}><boxGeometry/><meshBasicMaterial color={city==='Graveyard'?'#b7a2d4':p.accent}/></instancedMesh>
   </group>
 }
