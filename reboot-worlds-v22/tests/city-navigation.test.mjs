@@ -90,7 +90,7 @@ test('World and Worlds reset stale destination metadata', () => {
 })
 
 test('external modes restore active-city metadata at every interruption phase', () => {
-  for (const mode of ['echo','network','graveyard']) {
+  for (const mode of ['echo','network']) {
     for (const phase of ['loading','departing','crossing']) {
       useUI.setState({mode:'cityworld',cityCategory:'AI',categoryFilter:'AI',destination:'AI',travelPhase:'idle'})
       useUI.getState().enterCity('Gaming')
@@ -105,4 +105,13 @@ test('external modes restore active-city metadata at every interruption phase', 
       assert.equal(useUI.getState().travelPhase,'idle')
     }
   }
+})
+
+test('separate planets and Zero Hub clear interrupted city metadata',()=>{
+ for(const mode of ['graveyard','zero']){useUI.setState({mode:'cityworld',cityCategory:'AI',categoryFilter:'AI',destination:'AI',travelPhase:'departing'});useUI.getState().setMode(mode);assert.equal(useUI.getState().cityCategory,null);assert.equal(useUI.getState().destination,null);assert.equal(useUI.getState().travelPhase,'idle')}
+})
+
+test('Echo and Network retain the record being opened; new places clear it',()=>{
+ for(const mode of ['echo','network']){useUI.setState({mode:'zero',travelPhase:'idle',selectedProjectId:'record'});useUI.getState().setMode(mode);assert.equal(useUI.getState().selectedProjectId,'record')}
+ for(const mode of ['zero','beta','graveyard']){useUI.setState({mode:'echo',travelPhase:'idle',selectedProjectId:'record'});useUI.getState().setMode(mode);assert.equal(useUI.getState().selectedProjectId,null)}
 })

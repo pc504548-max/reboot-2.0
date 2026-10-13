@@ -183,6 +183,7 @@ function makeWindowTexture(): THREE.CanvasTexture {
 
 export function SkylineFiller({ projects }: { projects: CityProject[] }) {
   const tex = useMemo(() => makeWindowTexture(), [])
+  useEffect(() => () => tex.dispose(), [tex])
   const material = useMemo(() => new THREE.MeshStandardMaterial({
     color: '#0b101c',
     emissiveMap: tex,
@@ -191,6 +192,7 @@ export function SkylineFiller({ projects }: { projects: CityProject[] }) {
     roughness: 0.85,
     metalness: 0.25,
   }), [tex])
+  useEffect(() => () => material.dispose(), [material])
 
   const ref = useRef<THREE.InstancedMesh>(null)
   const COUNT = 130
@@ -361,6 +363,7 @@ function Billboard({ angle, lat, height, text, color, index }: {
   index: number
 }) {
   const tex = useMemo(() => makeBillboardTexture(text, color), [text, color])
+  useEffect(() => () => tex.dispose(), [tex])
   const materialRef = useRef<THREE.MeshBasicMaterial>(null)
   const quat = useMemo(() => {
     const q = uprightQuat(angle, lat)
@@ -469,6 +472,7 @@ export function DistrictGlow({ projects }: { projects: CityProject[] }) {
 
 function DistrictGlowDecal({ angle, lat, color }: { angle: number; lat: number; color: string }) {
   const tex = useMemo(() => makeGlowTexture(color), [color])
+  useEffect(() => () => tex.dispose(), [tex])
   const quat = useMemo(
     () => new THREE.Quaternion().setFromUnitVectors(
       new THREE.Vector3(0, 0, 1),

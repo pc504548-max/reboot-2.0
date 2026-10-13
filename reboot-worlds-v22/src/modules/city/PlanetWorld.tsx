@@ -11,6 +11,7 @@ import { useFrame } from '@react-three/fiber'
 import { Sparkles, Float } from '@react-three/drei'
 import * as THREE from 'three'
 import { CATEGORY_THEME, DISTRICT_MAP, type ProjectCategory } from '@/types/project'
+import { BlackHole } from '@/modules/cityworld/environment/BlackHole'
 import { PLANET_RADIUS, type CityProject } from './CityModule'
 
 // ---- Planet body -------------------------------------------------------- //
@@ -176,6 +177,7 @@ function surfacePos(angle: number, radialOffset: number, height: number): [numbe
 function GraveyardBiome({ sectorAngle, color }: { sectorAngle: number; color: string }) {
   return (
     <group position={[Math.cos(sectorAngle) * PLANET_RADIUS, 0, Math.sin(sectorAngle) * PLANET_RADIUS]}>
+      <BlackHole position={[Math.cos(sectorAngle)*38,28,Math.sin(sectorAngle)*38]} scale={1.3} />
       {/* Broken pillars */}
       {[0, 1, 2, 3].map((i) => {
         const a = (i - 1.5) * 0.08

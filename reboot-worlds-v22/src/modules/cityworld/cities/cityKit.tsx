@@ -1,4 +1,7 @@
+import { normalizeAppearance } from '@/lib/buildingAppearance'
+import { useUI } from '@/stores/ui'
 import { CITIES, isCityId } from '../cityRegistry'
+import { useEnvironment } from '../environment/ScenePrimitives'
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
@@ -62,7 +65,7 @@ export function makeTowerDNA(project: Project, index: number, total: number, rin
   return { pos: [x, 0, z], height, width, angle }
 }
 
-export type TowerCap = 'spire' | 'cube' | 'dome' | 'none'
+export type TowerCap = 'spire' | 'cube' | 'dome' | 'none' | 'pyramid' | 'crystal'
 
 /**
  * Palette-driven project tower. The project's live status shapes the
@@ -72,9 +75,9 @@ export type TowerCap = 'spire' | 'cube' | 'dome' | 'none'
  */
 export function CityTower({
   project,
-  dna,
-  palette,
-  cap = 'spire',
+  dna: baseDna,
+  palette: basePalette,
+  cap: baseCap = 'spire',
   hovered,
   selected,
   onHover,
@@ -89,9 +92,18 @@ export function CityTower({
   onHover: (id: string | null) => void
   onSelect: (p: Project) => void
 }) {
+  const preview = useUI(s=>s.customizations[project.id])
+  const custom = normalizeAppearance({...project.buildingCustomization,...preview})
+  const dna = {...baseDna,height:baseDna.height*Math.max(.5,Math.min(2,custom.height??1))}
+  const palette = {...basePalette,accent:custom.color??basePalette.accent}
+  const cap:TowerCap = !custom.style||custom.style==='standard'?baseCap:custom.style
   const group = useRef<THREE.Group>(null)
   const bodyMat = useRef<THREE.MeshStandardMaterial>(null)
+  const { reduced } = useEnvironment()
   const status = project.status
+  const curved = ['Health','Education','Legend','Space','Community'].includes(project.category)
+  const fractured = status === 'abandoned'
+
   const tilt = useMemo(
     () => (status === 'abandoned' ? 0.05 + seeded(project.id, 7) * 0.09 : status === 'decaying' ? 0.02 : 0),
     [status, project.id],
@@ -112,10 +124,10 @@ export function CityTower({
     const t = hovered || selected ? 1.06 : 1
     group.current.scale.setScalar(THREE.MathUtils.damp(group.current.scale.x, t, 6, delta))
     if (bodyMat.current) {
-      if (status === 'decaying') {
+      if (status === 'decaying' && !reduced) {
         bodyMat.current.emissiveIntensity = baseGlow * (0.55 + Math.abs(Math.sin(state.clock.elapsedTime * 6 + dna.angle * 5)) * 0.6)
       } else {
-        bodyMat.current.emissiveIntensity = baseGlow
+        bodyMat.current.emissiveIntensity = baseGlow * (custom.glowIntensity??1.4)/1.4
       }
     }
   })
@@ -139,15 +151,16 @@ export function CityTower({
         document.body.style.cursor = 'auto'
       }}
     >
+      <mesh position={[0,-.15,0]}><cylinderGeometry args={[dna.width*.9,dna.width, .3,8]} /><meshStandardMaterial color={palette.body} /></mesh>
       <mesh position={[0, dna.height / 2, 0]}>
-        <boxGeometry args={[dna.width, dna.height, dna.width]} />
+        {curved ? <cylinderGeometry args={[dna.width*.4,dna.width*.6,dna.height,12,1,fractured]} /> : <boxGeometry args={[dna.width, dna.height, dna.width]} />}
         <meshStandardMaterial
           ref={bodyMat}
           color={palette.body}
           emissive={palette.accent}
           emissiveIntensity={baseGlow}
           transparent
-          opacity={0.85}
+          opacity={fractured ? .25 : .85}
           metalness={0.65}
           roughness={0.25}
         />
@@ -161,6 +174,7 @@ export function CityTower({
           opacity={status === 'abandoned' ? 0.05 : hovered || selected ? 0.35 : 0.14}
         />
       </mesh>
+      {fractured && [0,1,2].map(level=><mesh key={level} position={[level===1?dna.width*.2:0,dna.height*(.2+level*.32),0]} rotation={[0,0,level===1?.12:0]}><boxGeometry args={[dna.width*1.08,.3,dna.width*1.08]}/><meshStandardMaterial color={palette.body} /></mesh>)}
       {status !== 'abandoned' && cap !== 'none' && (
         <>
           {cap === 'spire' && (
@@ -175,6 +189,7 @@ export function CityTower({
               </mesh>
             </>
           )}
+          {(cap === 'pyramid'||cap === 'crystal') && <mesh position={[0,dna.height+dna.width*.7,0]}>{cap==='pyramid'?<coneGeometry args={[dna.width*.8,dna.width*1.4,4]}/>:<octahedronGeometry args={[dna.width*.8]}/>}<meshStandardMaterial color={palette.secondary} emissive={palette.accent} emissiveIntensity={.2}/></mesh>}
           {cap === 'cube' && (
             <mesh position={[0, dna.height + 0.9, 0]}>
               <boxGeometry args={[0.55, 0.55, 0.55]} />

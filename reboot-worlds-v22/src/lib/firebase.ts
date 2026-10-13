@@ -15,10 +15,12 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 }
 
-export const firebaseApp: FirebaseApp = getApps().length
+export const firebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId && firebaseConfig.appId) && import.meta.env.VITE_LOCAL_PREVIEW !== 'true'
+
+export const firebaseApp: FirebaseApp | null = !firebaseConfigured ? null : getApps().length
   ? getApps()[0]
   : initializeApp(firebaseConfig)
 
-export const firebaseAuth: Auth = getAuth(firebaseApp)
+export const firebaseAuth: Auth | null = firebaseApp ? getAuth(firebaseApp) : null
 export const googleProvider = new GoogleAuthProvider()
 export const githubProvider = new GithubAuthProvider()

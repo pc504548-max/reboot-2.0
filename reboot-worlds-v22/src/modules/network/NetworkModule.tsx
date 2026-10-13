@@ -1,298 +1,82 @@
-/**
- * Network module — projects as connected nodes, relationships as edges.
- *
- * Layout is computed once with a simple radial grouping by category, then
- * relaxed a few iterations with a repulsion / spring model for readability.
- * The visualization is a 3D graph with glowing edges. Fully independent.
- */
-import { useMemo, useRef, useState, useCallback, Suspense } from 'react'
-import { Canvas, useFrame, type ThreeEvent } from '@react-three/fiber'
-import { OrbitControls, Html } from '@react-three/drei'
+import { useEffect,useLayoutEffect,useMemo,useRef,useState } from 'react'
+import { Canvas } from '@react-three/fiber'
+import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Network as NetworkIcon, X } from 'lucide-react'
 import { useProjects } from '@/stores/auth'
 import { useUI } from '@/stores/ui'
-import { CATEGORY_THEME, DISTRICT_MAP, type Project } from '@/types/project'
+import { CATEGORY_THEME,DISTRICTS,type Project } from '@/types/project'
+import { ProjectDetail } from '@/modules/city/CityVisualization'
+import { useMotionSettings } from '@/modules/cityworld/hooks/useCityNavigation'
+import { EnvironmentSettings,Motion } from '@/modules/cityworld/environment/ScenePrimitives'
+import { OrbitalRings } from '@/modules/cityworld/environment/Landmarks'
+import { RecordCamera } from '@/modules/shared/RecordCamera'
+import { layoutNetwork,relatedProjects } from '@/modules/shared/projectGraph'
+type Node=ReturnType<typeof layoutNetwork>['nodes'][number]
 
-interface NetNode {
-  project: Project
-  position: [number, number, number]
+function Nodes({nodes,selected,onSelect}:{nodes:Node[];selected:string|null;onSelect:(id:string)=>void}) {
+  const ref=useRef<THREE.InstancedMesh>(null)
+  useLayoutEffect(()=>{
+    if(!ref.current)return
+    const d=new THREE.Object3D(),color=new THREE.Color()
+    nodes.forEach((n,i)=>{d.position.set(...n.position);d.scale.setScalar((.65+n.project.stage*.16)*(selected===n.project.id?1.4:1));d.rotation.set(0,i*.5,0);d.updateMatrix();ref.current!.setMatrixAt(i,d.matrix);ref.current!.setColorAt(i,color.set(CATEGORY_THEME[n.project.category].emissive))})
+    ref.current.instanceMatrix.needsUpdate=true
+    if(ref.current.instanceColor)ref.current.instanceColor.needsUpdate=true
+    ref.current.computeBoundingSphere()
+  },[nodes,selected])
+  return <instancedMesh ref={ref} args={[undefined,undefined,nodes.length]} onClick={e=>{e.stopPropagation();if(e.instanceId!==undefined)onSelect(nodes[e.instanceId].project.id)}}>
+    <octahedronGeometry args={[1,0]}/><meshStandardMaterial metalness={.45} roughness={.25}/>
+  </instancedMesh>
 }
-
-/** Radial-by-category initial layout + a few relaxation iterations. */
-function layoutNetwork(projects: Project[]): { nodes: NetNode[]; edges: [number, number][] } {
-  const byCategory = new Map<string, Project[]>()
-  for (const p of projects) {
-    const list = byCategory.get(p.category) ?? []
-    list.push(p)
-    byCategory.set(p.category, list)
-  }
-  const cats = [...byCategory.keys()]
-  const positions = new Map<string, [number, number, number]>()
-
-  // Initial: each category gets a sector; projects spread within it.
-  cats.forEach((cat, ci) => {
-    const sectorAngle = (ci / cats.length) * Math.PI * 2
-    const list = byCategory.get(cat)!
-    list.forEach((p, pi) => {
-      const localAngle = sectorAngle + (pi / list.length) * (Math.PI * 2 / cats.length)
-      const r = 14 + (p.stage / 5) * 10
-      positions.set(p.id, [Math.cos(localAngle) * r, (pi % 3 - 1) * 4, Math.sin(localAngle) * r])
-    })
-  })
-
-  // Build edge list from connections.
-  const idIndex = new Map(projects.map((p, i) => [p.id, i]))
-  const edges: [number, number][] = []
-  projects.forEach((p, i) => {
-    for (const connId of p.connections) {
-      const j = idIndex.get(connId)
-      if (j !== undefined && j > i) edges.push([i, j])
-    }
-  })
-
-  // Relax: repulsion between all nodes + spring along edges.
-  const pos = projects.map((p) => positions.get(p.id)!.slice() as [number, number, number])
-  const iterations = 40
-  for (let it = 0; it < iterations; it++) {
-    const forces = projects.map(() => [0, 0, 0] as [number, number, number])
-    // Repulsion
-    for (let i = 0; i < pos.length; i++) {
-      for (let j = i + 1; j < pos.length; j++) {
-        const dx = pos[i][0] - pos[j][0]
-        const dy = pos[i][1] - pos[j][1]
-        const dz = pos[i][2] - pos[j][2]
-        const d2 = dx * dx + dy * dy + dz * dz + 0.01
-        const f = 8 / d2
-        const d = Math.sqrt(d2)
-        forces[i][0] += (dx / d) * f
-        forces[i][1] += (dy / d) * f
-        forces[i][2] += (dz / d) * f
-        forces[j][0] -= (dx / d) * f
-        forces[j][1] -= (dy / d) * f
-        forces[j][2] -= (dz / d) * f
-      }
-    }
-    // Springs
-    for (const [a, b] of edges) {
-      const dx = pos[b][0] - pos[a][0]
-      const dy = pos[b][1] - pos[a][1]
-      const dz = pos[b][2] - pos[a][2]
-      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) + 0.01
-      const target = 12
-      const f = (d - target) * 0.1
-      forces[a][0] += (dx / d) * f
-      forces[a][1] += (dy / d) * f
-      forces[a][2] += (dz / d) * f
-      forces[b][0] -= (dx / d) * f
-      forces[b][1] -= (dy / d) * f
-      forces[b][2] -= (dz / d) * f
-    }
-    // Apply
-    for (let i = 0; i < pos.length; i++) {
-      pos[i][0] += forces[i][0] * 0.5
-      pos[i][1] += forces[i][1] * 0.5
-      pos[i][2] += forces[i][2] * 0.5
-    }
-  }
-
-  const nodes = projects.map((p, i) => ({ project: p, position: pos[i] }))
-  return { nodes, edges }
+function Connections({nodes,edges}:{nodes:Node[];edges:[number,number][]}) {
+  const geometry=useMemo(()=>{
+    const g=new THREE.BufferGeometry(),points:number[]=[]
+    edges.forEach(([a,b])=>points.push(...nodes[a].position,...nodes[b].position))
+    g.setAttribute('position',new THREE.Float32BufferAttribute(points,3));return g
+  },[nodes,edges])
+  useEffect(()=>()=>geometry.dispose(),[geometry])
+  return <lineSegments geometry={geometry}><lineBasicMaterial color="#a396db" transparent opacity={.5}/></lineSegments>
 }
-
-function NetNodeMesh({
-  node,
-  hovered,
-  onHover,
-  onSelect,
-}: {
-  node: NetNode
-  hovered: boolean
-  onHover: (id: string | null) => void
-  onSelect: (id: string) => void
-}) {
-  const theme = CATEGORY_THEME[node.project.category]
-  const ref = useRef<THREE.Mesh>(null)
-  const scale = 0.5 + (node.project.stage / 5) * 0.8
-
-  useFrame((state) => {
-    if (ref.current) {
-      const pulse = 1 + Math.sin(state.clock.elapsedTime * 1.5 + node.project.stage) * 0.06
-      ref.current.scale.setScalar(scale * pulse * (hovered ? 1.5 : 1))
-    }
-  })
-
-  return (
-    <group position={node.position}>
-      <mesh
-        ref={ref}
-        onPointerOver={(e: ThreeEvent<PointerEvent>) => {
-          e.stopPropagation()
-          onHover(node.project.id)
-          document.body.style.cursor = 'pointer'
-        }}
-        onPointerOut={() => {
-          onHover(null)
-          document.body.style.cursor = 'auto'
-        }}
-        onClick={(e: ThreeEvent<MouseEvent>) => {
-          e.stopPropagation()
-          onSelect(node.project.id)
-        }}
-      >
-        <sphereGeometry args={[1, 20, 20]} />
-        <meshStandardMaterial
-          color={theme.emissive}
-          emissive={theme.emissive}
-          emissiveIntensity={hovered ? 1.2 : 0.6}
-          roughness={0.4}
-          metalness={0.3}
-        />
-      </mesh>
-      {hovered && (
-        <Html position={[0, 2, 0]} center distanceFactor={18}>
-          <div className="glass-strong px-md py-sm rounded-lg whitespace-nowrap pointer-events-none gpu">
-            <div className="text-xs font-medium text-text">{node.project.name}</div>
-            <div className="text-[10px] text-text-secondary mt-0.5">
-              {DISTRICT_MAP[node.project.category].shortName} · Stage {node.project.stage}
-            </div>
-          </div>
-        </Html>
-      )}
-    </group>
-  )
-}
-
-function Edges({ nodes, edges }: { nodes: NetNode[]; edges: [number, number][] }) {
-  const geometry = useMemo(() => {
-    const positions: number[] = []
-    for (const [a, b] of edges) {
-      positions.push(...nodes[a].position, ...nodes[b].position)
-    }
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-    return geo
-  }, [nodes, edges])
-
-  if (edges.length === 0) return null
-  return (
-    <lineSegments geometry={geometry}>
-      <lineBasicMaterial color="#3DD8FF" transparent opacity={0.35} />
-    </lineSegments>
-  )
-}
-
 export function NetworkModule() {
-  const all = useProjects((s) => s.projects)
-  const loading = useProjects((s) => s.loading)
-  const selectProject = useUI((s) => s.selectProject)
-  const selectedProjectId = useUI((s) => s.selectedProjectId)
-  const [hoveredId, setHoveredId] = useState<string | null>(null)
-
-  const { nodes, edges } = useMemo(() => layoutNetwork(all), [all])
-  const selected = useMemo(
-    () => all.find((p) => p.id === selectedProjectId) ?? null,
-    [all, selectedProjectId],
-  )
-
-  const onSelect = useCallback((id: string) => selectProject(id), [selectProject])
-
-  if (loading && all.length === 0) {
-    return (
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="font-mono text-xs text-text-secondary animate-pulse-soft">Mapping Network...</div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="absolute inset-0 bg-gradient-to-b from-[#06080c] to-[#0a0e16]">
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4, duration: 0.6 }}
-        className="absolute top-lg left-1/2 -translate-x-1/2 z-20 glass px-lg py-sm rounded-lg flex items-center gap-sm"
-      >
-        <NetworkIcon size={14} className="text-primary" />
-        <span className="text-xs text-text-secondary">
-          Network · {all.length} projects · {edges.length} connections
-        </span>
-      </motion.div>
-
-      <Canvas
-        dpr={[1, 1.8]}
-        camera={{ position: [0, 20, 50], fov: 50 }}
-        gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
-      >
-        <ambientLight intensity={0.3} />
-        <pointLight position={[0, 30, 0]} intensity={0.4} color="#3DD8FF" distance={80} />
-
-        <Suspense fallback={null}>
-          <Edges nodes={nodes} edges={edges} />
-          {nodes.map((n) => (
-            <NetNodeMesh
-              key={n.project.id}
-              node={n}
-              hovered={hoveredId === n.project.id}
-              onHover={setHoveredId}
-              onSelect={onSelect}
-            />
-          ))}
-        </Suspense>
-
-        <OrbitControls
-          enablePan
-          enableZoom
-          enableRotate
-          minDistance={20}
-          maxDistance={100}
-          enableDamping
-          dampingFactor={0.08}
-          autoRotate
-          autoRotateSpeed={0.3}
-        />
-      </Canvas>
-
-      <AnimatePresence>
-        {selected && (
-          <motion.div
-            initial={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
-            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute bottom-2xl left-1/2 -translate-x-1/2 z-20 w-[380px] max-w-[calc(100vw-2rem)]"
-          >
-            <div className="glass-strong p-lg rounded-lg">
-              <div className="flex items-start justify-between mb-md">
-                <div>
-                  <div
-                    className="label-mono mb-1"
-                    style={{ color: CATEGORY_THEME[selected.category].emissive }}
-                  >
-                    {DISTRICT_MAP[selected.category].name}
-                  </div>
-                  <h3 className="text-lg font-medium text-text">{selected.name}</h3>
-                  <p className="text-xs text-text-secondary mt-1">{selected.tagline}</p>
-                </div>
-                <button
-                  onClick={() => selectProject(null)}
-                  className="text-text-secondary hover:text-text transition-colors"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-              <div className="flex items-center gap-md text-xs text-text-secondary">
-                <span>Stage {selected.stage}/5</span>
-                <span>·</span>
-                <span>{selected.connections.length} connections</span>
-                <span>·</span>
-                <span>{selected.followers.toLocaleString()} followers</span>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  )
+  const all=useProjects(s=>s.projects),error=useProjects(s=>s.error),loading=useProjects(s=>s.loading)
+  const selectedId=useUI(s=>s.selectedProjectId),select=useUI(s=>s.selectProject)
+  const [query,setQuery]=useState(''),[category,setCategory]=useState(''),[detail,setDetail]=useState(false)
+  const {reduced,lowEffects,setLowEffects}=useMotionSettings()
+  const visible=useMemo(()=>all.filter(p=>(!category||p.category===category)&&[p.name,p.tagline,...p.tags].join(' ').toLowerCase().includes(query.toLowerCase())),[all,query,category])
+  const {nodes,edges}=useMemo(()=>layoutNetwork(visible),[visible])
+  const selected=all.find(p=>p.id===selectedId),node=nodes.find(n=>n.project.id===selectedId)
+  const related=selected?relatedProjects(selected,all):[]
+  const choose=(id:string)=>{select(id);setDetail(false)}
+  return <div className="record-experience" data-experience="network">
+    <Canvas dpr={[1,lowEffects?1:1.5]} camera={{position:[0,22,60],fov:52}} frameloop={reduced?'demand':'always'}>
+      <color attach="background" args={['#050914']}/><ambientLight intensity={1.3}/><directionalLight position={[20,30,20]} intensity={2}/>
+      <EnvironmentSettings.Provider value={{reduced,lowEffects}}>
+        <Motion speed={.025}><OrbitalRings color="#517f97" radius={5}/><mesh><icosahedronGeometry args={[2,0]}/><meshStandardMaterial color="#375a70" wireframe/></mesh></Motion>
+        <Connections nodes={nodes} edges={edges}/><Nodes nodes={nodes} selected={selectedId} onSelect={choose}/>
+        {/* Attribution is per record: equal display names are never merged into inferred identities. */}
+        {nodes.filter(n=>n.project.founder&&n.project.founder!=='Unknown').map(n=><mesh key={n.project.id} position={[n.position[0],n.position[1]+2,n.position[2]]} onClick={e=>{e.stopPropagation();choose(n.project.id)}}><sphereGeometry args={[.22,8,6]}/><meshBasicMaterial color="#e0c6a4"/></mesh>)}
+        {nodes.filter(n=>n.project.category==='Community').map(n=><group key={n.project.id} position={n.position}>{[-1,1].map(side=><mesh key={side} position={[side*1.1,-.3,0]}><boxGeometry args={[.6,1,.6]}/><meshStandardMaterial color="#76b7a8"/></mesh>)}</group>)}
+        {!all.length&&Array.from({length:9},(_,i)=><Motion key={i} position={[Math.cos(i*2.4)*19,Math.sin(i)*5,Math.sin(i*2.4)*19]} speed={.04}><mesh><octahedronGeometry args={[.8]}/><meshStandardMaterial color="#456580" wireframe/></mesh></Motion>)}
+      </EnvironmentSettings.Provider>
+      <OrbitControls makeDefault enablePan minDistance={7} maxDistance={110} enableDamping={!reduced}/>
+      <RecordCamera position={node?.position??null} reduced={reduced}/>
+    </Canvas>
+    <header className="record-heading"><p className="label-mono">NETWORK / PROJECT CONSTELLATIONS</p><h1>The Nexus</h1><p>{visible.length} projects · {edges.length} documented connections</p><button onClick={()=>useUI.getState().setMode('city')}>← Return to World Hub</button></header>
+    <label className="record-quality"><input type="checkbox" checked={lowEffects} onChange={e=>setLowEffects(e.target.checked)}/> Reduced effects</label>
+    <aside className="record-browser">
+      <label>Search projects<input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Title, idea, or tag…"/></label>
+      <label>Category<select value={category} onChange={e=>setCategory(e.target.value)}><option value="">All categories</option>{DISTRICTS.map(d=><option key={d.id} value={d.id}>{d.shortName}</option>)}</select></label>
+      {loading&&<p>Loading projects…</p>}{error&&<p role="status">Project records unavailable: {error}</p>}
+      {!all.length?<p>An introductory constellation of placeholder nodes. Add real project records to begin exploring connections.</p>:!visible.length&&<p>No projects match these filters.</p>}
+      <div>{visible.map(p=><button key={p.id} aria-pressed={selectedId===p.id} onClick={()=>choose(p.id)}>{p.name}</button>)}</div>
+    </aside>
+    {selected&&!detail&&<section className="record-detail">
+      <button className="record-close" aria-label="Close node" onClick={()=>select(null)}>✕</button>
+      <p className="label-mono">{selected.category} / {selected.status}</p><h2>{selected.name}</h2><p>{selected.tagline}</p>
+      <p>Recorded founder: {selected.founder||'Not recorded'}</p><p>Stage {selected.stage} / 5</p>
+      <h3>Documented connections</h3>{related.length?related.map(p=><button key={p.id} className="record-link" onClick={()=>{setCategory('');setQuery('');choose(p.id)}}>{p.name} ↗</button>):<p>No documented connections with available projects.</p>}
+      <button className="record-link" onClick={()=>setDetail(true)}>Open project details →</button>
+    </section>}
+    {selected&&detail&&<ProjectDetail project={selected} canCustomize={false} onClose={()=>setDetail(false)}/>}
+    <footer className="record-legend">Geometry · project　 Small warm node · recorded founder　 Cluster · community project<br/>Position groups categories. Lines show documented connections. Isolated records sit farther from the Nexus.</footer>
+  </div>
 }

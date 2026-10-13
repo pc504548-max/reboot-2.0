@@ -33,6 +33,7 @@ export type AwardType =
   | 'innovator'
   | 'comeback'
   | 'founder'
+  | 'firstlook' | 'discovered' | 'historian' | 'restorer'
 
 export interface Award {
   type: AwardType
@@ -83,6 +84,11 @@ export const CATEGORY_THEME: Record<ProjectCategory, { color: string; emissive: 
 ) as Record<ProjectCategory, { color: string; emissive: string }>
 
 export interface Project {
+  ownerId?: string | null
+  temporary?: boolean
+  expiresAt?: number
+  buildingCustomization?: {color: string; height: number; style: 'standard'|'spire'|'pyramid'|'dome'|'crystal'; glowIntensity: number}
+
   id: string
   name: string
   tagline: string
@@ -97,17 +103,21 @@ export interface Project {
   foundedYear: number
   failureYear: number | null
   failureReason: string | null
+  lessonsLearned?: string | null
+  revivalRequirements?: string | null
   tags: string[]
   connections: string[]
+  viewCount?: number
   followers: number
   createdAt: string
   updatedAt: string
 }
 
-export type NewProject = Omit<Project, 'id' | 'createdAt' | 'updatedAt'>
+export type NewProject = Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'temporary' | 'expiresAt' | 'ownerId' | 'viewCount'>
 
 /** Row shape returned by Supabase. */
 export interface ProjectRow {
+  project_metrics?: {view_count:number} | null
   id: string
   name: string
   tagline: string
@@ -120,9 +130,12 @@ export interface ProjectRow {
   founded_year: number
   failure_year: number | null
   failure_reason: string | null
+  lessons_learned?: string | null
+  revival_requirements?: string | null
   tags: string[]
   connections: string[]
   followers: number
+  building_customization?: Project['buildingCustomization']
   firebase_uid: string | null
   created_at: string
   updated_at: string
@@ -131,6 +144,9 @@ export interface ProjectRow {
 export function rowToProject(row: ProjectRow): Project {
   return {
     id: row.id,
+    viewCount: row.project_metrics?.view_count ?? 0,
+    ownerId: row.firebase_uid,
+    buildingCustomization: row.building_customization,
     name: row.name,
     tagline: row.tagline,
     description: row.description,
@@ -142,6 +158,8 @@ export function rowToProject(row: ProjectRow): Project {
     foundedYear: row.founded_year,
     failureYear: row.failure_year,
     failureReason: row.failure_reason,
+    lessonsLearned: row.lessons_learned ?? null,
+    revivalRequirements: row.revival_requirements ?? null,
     tags: row.tags ?? [],
     connections: row.connections ?? [],
     followers: row.followers ?? 0,
@@ -161,9 +179,14 @@ export const AWARD_DEFINITIONS: Omit<Award, 'earnedAt'>[] = [
   { type: 'innovator', label: 'Innovator', description: 'In Idea Hub district', icon: 'Lightbulb' },
   { type: 'comeback', label: 'Comeback Kid', description: 'Recovered from decaying status', icon: 'RefreshCw' },
   { type: 'founder', label: 'Founder', description: 'Has a named founder on record', icon: 'UserCheck' },
+  {type:'firstlook',label:'First Spark',description:'First unique beta-member view',icon:'Sparkles'},
+  {type:'discovered',label:'Beyond Zero',description:'Reached 100 unique beta-member views',icon:'TrendingUp'},
+  {type:'historian',label:'Memory Keeper',description:'Documented both an abandonment reason and lessons',icon:'Shield'},
+  {type:'restorer',label:'Revival Blueprint',description:'Recorded what revival would require',icon:'Lightbulb'},
 ]
 
 export function computeAwards(project: Project): Award[] {
+  if (project.temporary) return []
   const awards: Award[] = []
   const now = new Date()
   const ageYears = (now.getTime() - new Date(project.createdAt).getTime()) / (1000 * 60 * 60 * 24 * 365)
@@ -192,6 +215,10 @@ export function computeAwards(project: Project): Award[] {
   if (project.founder && project.founder !== 'Unknown') {
     awards.push({ ...AWARD_DEFINITIONS[7], earnedAt: null })
   }
+  if((project.viewCount??0)>=1)awards.push({...AWARD_DEFINITIONS[8],earnedAt:null})
+  if((project.viewCount??0)>=100)awards.push({...AWARD_DEFINITIONS[9],earnedAt:null})
+  if(project.failureReason?.trim()&&project.lessonsLearned?.trim())awards.push({...AWARD_DEFINITIONS[10],earnedAt:null})
+  if(project.revivalRequirements?.trim())awards.push({...AWARD_DEFINITIONS[11],earnedAt:null})
   return awards
 }
 

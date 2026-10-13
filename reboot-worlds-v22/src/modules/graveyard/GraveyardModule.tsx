@@ -24,7 +24,7 @@ const AWARD_ICONS: Record<AwardType, typeof Zap> = {
   community: Users,
   innovator: Lightbulb,
   comeback: RefreshCw,
-  founder: UserCheck,
+  founder: UserCheck, firstlook: Zap, discovered: TrendingUp, historian: Shield, restorer: Lightbulb,
 }
 
 interface Grave {
